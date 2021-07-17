@@ -1,0 +1,16 @@
+CREATE USER tsouser IDENTIFIED BY "changeit"  ;
+GRANT CONNECT, RESOURCE, DBA TO tsouser ;
+GRANT CREATE SESSION GRANT ANY PRIVILEGE TO tsouser ;
+
+
+CREATE TABLE tso_statistics
+    (
+    server VARCHAR(255) NOT NULL ,
+    threads NUMBER(8) NOT NULL ,
+    max_mem NUMBER(8) NOT NULL ,
+    total_mem NUMBER(8) NOT NULL ,
+    avail_mem NUMBER(8) NOT NULL,
+    used_mem NUMBER(8) NOT NULL ,
+    vm_uptime VARCHAR(255) NOT NULL,
+    stat_time TIMESTAMP(0) DEFAULT SYSTIMESTAMP NOT NULL
+    );

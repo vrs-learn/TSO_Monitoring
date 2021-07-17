@@ -1,0 +1,131 @@
+from database import Database
+from tsoapi import CDP_api
+from statistics import mean
+#from env_details import envDB
+
+db=Database("tsohealth.db")
+
+def read_db(server):
+    #data=db.view(srvr)
+    data=db.select_query("select * from tsostats where stat_time >= datetime('now','-15 minute','localtime') and server='%s'" % server)
+    print("\nPrinting the Performance Metrics of TSO for Server"+str(server))
+    print("Server\t\tThreads\tMaximum_Memory\tTotal_Memory\tAvailable_Memory\tUsed_Memory\tVM_Uptime\t\tTime")
+    for row in data:
+        print(str(row[1])+"\t"+str(row[2])+"\t"+str(row[3])+"\t\t"+str(row[4])+"\t\t"+str(row[5])+"\t\t\t"+str(row[6])+"\t\t"+str(row[7])+"\t"+str(row[8]))
+    return data
+
+def populate_adapter_details(adapters_list,grid_adapters):
+    grid_adapter_details = []
+    for adapter in adapters_list :
+        for x in grid_adapters :
+            if x['name']==adapter:
+                grid_adapter_details.append(x)
+    return grid_adapter_details
+
+def form_adapter_body(adapter_details):
+    adapter_body=[]
+    for x in adapter_details:
+        temp={}
+        temp['name']=x['name']
+        temp['version']=x['version']
+        temp['revision']=x['revision']
+        temp['peerName']=x['status'][0]['peerName']
+        adapter_body.append(temp)
+    return adapter_body
+
+def filter_active_adapters(adapters_list,filter_state):
+    filtered_adapters=[]
+    for adap in adapters_list:
+        get_status=adap['status'][0]['status']
+        if get_status != filter_state :
+            filtered_adapters.append(adap)
+        else :
+            print("Adapter "+adap['name']+" is "+get_status+"\n")
+    return filtered_adapters
+
+#############################################
+################## M A I N ##################
+#############################################
+
+list_of_grid=['clm-aus-018787','clm-aus-018786']
+
+grid1=list_of_grid[0]
+grid2=list_of_grid[1]
+
+grid1_cdp=CDP_api("http://clm-aus-018787:38080","aoadmin","admin123")
+grid2_cdp=CDP_api("https://clm-aus-018786:38080","aoadmin","admin123")
+
+grid1_cdp.login()
+grid2_cdp.login()
+
+grid1_stats = read_db(grid1)
+grid2_stats = read_db(grid2)
+
+
+list_of_adapters=['FileAdapter']
+
+if len(grid1_stats) > 0 and len(grid2_stats) > 0 :
+    grid1_avg_thread = mean(list(zip(*grid1_stats))[2])
+    grid2_avg_thread = mean(list(zip(*grid2_stats))[2])
+
+    print("Grid1 Average Thread is:"+str(grid1_avg_thread))
+    print("Grid2 Average Thread is:"+str(grid2_avg_thread))
+
+    grid1_adapters=grid1_cdp.get_adapters()
+    grid2_adapters=grid2_cdp.get_adapters()
+
+    #print(grid1_adapters)
+    #print(grid2_adapters)
+
+    grid1_adapter_details=populate_adapter_details(list_of_adapters,grid1_adapters)
+    grid2_adapter_details=populate_adapter_details(list_of_adapters,grid2_adapters)
+
+    # Average Thread Comparison Logic
+    if grid1_avg_thread < grid2_avg_thread :
+        print("Working on Grid 1\n")
+        adapters_to_be_enabled=filter_active_adapters(grid1_adapter_details,"Currently running")
+        if len(adapters_to_be_enabled) > 0:
+            adapter_body=form_adapter_body(adapters_to_be_enabled)
+            adapter_json={'adapters':adapter_body}
+            print(adapter_json)
+            print("\n")
+            grid1_cdp.enable_adapter(adapter_json)
+            if grid1_cdp.enable_req.status_code==200:
+                print("\nAdapters enabled successfully on Grid 1 : "+grid1)
+            else :
+                print("\nFailed to enable adapters on Grid 1 : "+grid1)
+                print(grid1_cdp.enable_req_msg[0]['errorMessage'])
+        print("\nWorking on Grid 2")
+        adapter_body=form_adapter_body(grid2_adapter_details)
+        adapter_json={'adapters':adapter_body}
+        grid2_cdp.disable_adapter(adapter_json)
+        if grid2_cdp.disable_req.status_code==200:
+            print("\nAdapters disabled successfully on Grid 2 : "+grid2)
+        else :
+            print("\nFailed to disable adapters on Grid 2 : "+grid2)
+            print(grid2_cdp.disable_req_msg[0]['errorMessage'])
+    else :
+        print("Working on Grid 2\n")
+        adapters_to_be_enabled=filter_active_adapters(grid2_adapter_details,"Currently running")
+        if len(adapters_to_be_enabled) > 0:
+            adapter_body=form_adapter_body(adapters_to_be_enabled)
+            adapter_json={'adapters':adapter_body}
+            print(adapter_json)
+            print("\n")
+            grid2_cdp.enable_adapter(adapter_json)
+            if grid2_cdp.enable_req.status_code==200:
+                print("\nAdapters enabled successfully on Grid 2 : "+grid2)
+            else :
+                print("\nFailed to enable adapters on Grid 2 : "+grid2)
+                print(grid1_cdp.enable_req_msg[0]['errorMessage'])
+        print("\nWorking on Grid 1")
+        adapter_body=form_adapter_body(grid1_adapter_details)
+        adapter_json={'adapters':adapter_body}
+        grid1_cdp.disable_adapter(adapter_json)
+        if grid1_cdp.disable_req.status_code==200:
+            print("\nAdapters disabled successfully on Grid 1 : "+grid1)
+        else :
+            print("\nFailed to disable adapters on Grid 1 : "+grid1)
+            print(grid2_cdp.disable_req_msg[0]['errorMessage'])
+else :
+    print("\nThreads Data Unavailable to take action. ")
